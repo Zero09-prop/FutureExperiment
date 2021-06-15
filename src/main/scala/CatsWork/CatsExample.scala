@@ -6,31 +6,29 @@ import cats.effect.unsafe.IORuntime
 
 object CatsExample {
   def main(args: Array[String]): Unit = {
-    doSomething(cats.effect.unsafe.implicits.global)
-  }
-
-  private def doSomething(implicit contextImplicit: IORuntime): Unit = {
     val ioInt: IO[Array[Int]] = IO {
       readStrings()
     }
+    val ExecutionCtx = ExecutionContext.fromExecutor(Executors.newCachedThreadPool())
+    val cpuPool = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
 
-    def avg(pred: Int => Boolean): IO[Double] = {
-      val filterValues = ioInt
-        .map(x => x.filter(pred))
-      filterValues.map(x => average(x))
-    }
-
-    val ioAvgEven = avg(isEven)
-    val ioAvgOdd = avg(isOdd)
+    def cpuEval[A](ioa: IO[A]): IO[A] =
+      ioa.evalOn(cpuPool)
+    def avg(pred: Int => Boolean)(ints: Array[Int]): IO[Double] =
+      IO {
+        average(ints.filter(pred))
+      }
+    val ioAvgEven = avg(isEven)(_)
+    val ioAvgOdd = avg(isOdd)(_)
 
     val ioDiff: IO[Double] =
       for {
-        evenAvg <- ioAvgEven
-        oddAvg <- ioAvgOdd
+        ints <- ioInt
+        evenAvg <- cpuEval(ioAvgEven(ints))
+        oddAvg <- cpuEval(ioAvgOdd(ints))
       } yield (evenAvg + oddAvg) / 2
 
     val avgLength = ioDiff.unsafeRunSync()
     println(s"Average length of words is $avgLength")
   }
-
 }
